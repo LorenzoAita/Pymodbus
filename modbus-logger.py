@@ -1,12 +1,22 @@
 #!/usr/bin/python
 
-PROXIMITY = 5
+PROXIMITY = 5	#if requested registers are PROXIMITY from each other, combine the requests into one
 
-#requires pymodbus3...pip install pymodbus3
 from pymodbus3.client.sync import ModbusTcpClient
-
-
 import argparse
+import re
+import datetime
+from time import sleep
+import signal
+import sys
+
+#listen for control-c to exit our polling loop
+def signal_handler(signal, frame):
+	print('\nExiting!')
+	sys.exit(0)
+signal.signal(signal.SIGINT, signal_handler)
+
+#parse command line arguments
 parser = argparse.ArgumentParser()
 parser.add_argument('ip_address', type=str, help='IP address of Modbus TCP server')
 parser.add_argument('registers', type=str, help='Comma seperated string of registers to read, the first character of each address indicates the type of register (0=, 1=, 3=, 4=)')
@@ -18,19 +28,11 @@ parser.add_argument('-f', '--file', help='Filename to output data to')
 parser.add_argument('-s', '--separator', default=',', help='Separator character (default is ,)')
 args = parser.parse_args()
 
+registerList = []		#requested registers
+readList = []			#requested registers combined into the few need requests
 
-#data = dict((x.strip(), '-') for x in args.registers.split(','))
-
-#print(data)
-#exit()
-
-import re
+#build up readList combining requests where possible
 p = re.compile('^(\d)(\d+)$')
-
-registerList = []
-readList = []
-
-
 for r in args.registers.split(','):
 	a = p.match(r.strip())
 	if a:
@@ -50,22 +52,15 @@ for r in args.registers.split(','):
 		if nr:
 			readList.append(nr)
 
+#debugging output
 if args.verbose:
 	print(registerList)
 	print(readList)
 
-import datetime
-from time import sleep
-import signal
-import sys
-def signal_handler(signal, frame):
-	print('\nExiting!')
-	sys.exit(0)
-signal.signal(signal.SIGINT, signal_handler)
-
-
+#create modbus client
 client = ModbusTcpClient(args.ip_address, args.port)
 
+#read modbus data
 data = {}
 lastFilename = ''
 while True:
@@ -73,19 +68,33 @@ while True:
 		result = '-'
 		if ri['type'] == 0:
 			result = client.read_coils(ri['address'], ri['count'], unit=args.unit)
+		if ri['type'] == 1:
+			result = client.read_discrete_inputs(ri['address'], ri['count'], unit=args.unit)
+		if ri['type'] == 3:
+			result = client.read_input_registers(ri['address'], ri['count'], unit=args.unit)
+		if ri['type'] == 4:
+			result = client.read_holding_registers(ri['address'], ri['count'], unit=args.unit)
 
-		if result != '-':
+		if ri['type'] < 2 and result != '-':
 			i = 0
 			for r in result.bits:
 				data[str(ri['type']) + '_' + str(ri['address'] + i)] = str(int(r))
 				i += 1
 
+		if ri['type'] > 2 and result != '-':
+			i = 0
+			for r in result.registers:
+				data[str(ri['type']) + '_' + str(ri['address'] + i)] = str(int(r))
+				i += 1
+
+	#get current time for timestamp and file naming
 	curTime = datetime.datetime.now()
 	output = curTime.strftime('%Y-%m-%d')
 	output += ',' + curTime.strftime('%H:%M:%S')
 	for r in registerList:
 		output += ',' + data[str(r['type']) + '_' + str(r['address'])]
 
+	#if file name specified, output to file creating/overwriting files as needed
 	if args.file:
 		fileName = curTime.strftime(args.file)
 		if lastFilename == '':
@@ -103,6 +112,7 @@ while True:
 	else:
 		print(output)
 
+	#pause for milliseconds specified in interval argument
 	sleep(args.interval / 1000)
 
 client.close()
