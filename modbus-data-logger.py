@@ -19,7 +19,7 @@ signal.signal(signal.SIGINT, signal_handler)
 #parse command line arguments
 parser = argparse.ArgumentParser()
 parser.add_argument('ip_address', type=str, help='IP address of Modbus TCP server')
-parser.add_argument('registers', type=str, help='Comma seperated string of registers to read, the first character of each address indicates the type of register (0=, 1=, 3=, 4=)')
+parser.add_argument('registers', type=str, help='Comma seperated string of registers to read, the first character of each address indicates the type of register (0=Coil, 1=Discreet Input, 3=Input Register, 4=Holding Register)')
 parser.add_argument('-v', '--verbose', action='store_true', help='Increase output verbosity')
 parser.add_argument('-u', '--unit', type=int, default=1, help='Modbus unit id (default is 1)')
 parser.add_argument('-p', '--port', type=int, default=502, help='Modbus port to connect to (default is 502)')
